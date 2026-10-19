@@ -1,13 +1,9 @@
-// src/app/layout.tsx
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-
-const inter = Inter({ subsets: ["latin"] });
+import type { Metadata } from 'next';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "KilasNota - AI UMKM Admin Companion",
-  description: "Otomatisasi rekap orderan WA untuk UMKM dalam satu klik.",
+  title: 'KilasWeb — AI UMKM Website & Storefront Studio',
+  description: 'Bangun website dan toko online instan untuk UMKM dengan kustomisasi gaya visual, palet warna, dan checkout WhatsApp otomatis.',
 };
 
 export default function RootLayout({
@@ -16,12 +12,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="id" className="h-full select-none antialiased">
-      <body className={`${inter.className} h-full bg-[#0d1117] text-[#ffffff]`}>
-        {/* Mobile-First Constraints Container */}
-        <div className="mx-auto min-h-full max-w-md bg-[#0d1117] px-4 shadow-2xl shadow-black/50">
-          <main className="py-6">{children}</main>
-        </div>
+    <html lang="id" className="h-full antialiased dark">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;0,800;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body className="h-full bg-[#0a0d14] text-[#f1f5f9] overflow-x-hidden selection:bg-amber-400 selection:text-black">
+        {children}
       </body>
     </html>
   );
