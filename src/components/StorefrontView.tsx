@@ -2,28 +2,46 @@
 
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  ShoppingBag, 
-  Plus, 
-  Minus, 
-  Trash2, 
-  MapPin, 
-  Clock, 
-  MessageCircle, 
-  Star, 
-  CheckCircle2, 
-  Search,
-  ExternalLink,
-  Sparkles,
-  X
-} from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { ShoppingBag, Plus, Minus, X, Search, ArrowRight, ArrowUpRight } from 'lucide-react';
 import { UMKMSite, ProductItem, CartItem } from '@/lib/types';
 
 interface StorefrontViewProps {
   site: UMKMSite;
   isInteractive?: boolean;
 }
+
+const CATEGORY_LABEL: Record<UMKMSite['category'], string> = {
+  fnb: 'Kuliner',
+  retail: 'Toko',
+  services: 'Jasa',
+  craft: 'Kriya',
+};
+
+const formatRp = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
+
+/** Pick black or white text for a given background, by WCAG contrast. */
+function readableOn(hex: string): string {
+  const h = hex.replace('#', '');
+  if (!/^[0-9a-f]{6}$/i.test(h)) return '#111111';
+  const ch = [0, 2, 4].map((i) => {
+    const c = parseInt(h.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  const L = 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+  return (L + 0.05) / 0.05 > 1.05 / (L + 0.05) ? '#111111' : '#ffffff';
+}
+
+/** Append alpha to a #rrggbb color; falls back to a neutral if the hex is incomplete. */
+function alpha(hex: string, a: string): string {
+  return /^#[0-9a-f]{6}$/i.test(hex) ? `${hex}${a}` : `rgba(128,128,128,0.2)`;
+}
+
+const RADIUS: Record<string, { base: string; control: string }> = {
+  sharp: { base: '2px', control: '2px' },
+  smooth: { base: '8px', control: '6px' },
+  rounded: { base: '18px', control: '12px' },
+  pill: { base: '22px', control: '999px' },
+};
 
 export default function StorefrontView({ site, isInteractive = true }: StorefrontViewProps) {
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -33,660 +51,582 @@ export default function StorefrontView({ site, isInteractive = true }: Storefron
   const [buyerName, setBuyerName] = useState<string>('');
   const [buyerAddress, setBuyerAddress] = useState<string>('');
 
-  // Extract unique categories from products
+  const s = site.style;
+  const radius = RADIUS[s.borderRadius] ?? RADIUS.smooth;
+  const onPrimary = readableOn(s.primaryColor);
+  const onAccent = readableOn(s.accentColor);
+  const line = alpha(s.textColor, '1a');
+  const muted = alpha(s.textColor, 'a6');
+  const subtle = alpha(s.textColor, '73');
+  const waBase = `https://wa.me/${site.phone.replace(/[^0-9]/g, '')}`;
+  const city = site.address.split(',').pop()?.trim();
+
   const productCategories = useMemo(() => {
     const set = new Set<string>();
-    site.products.forEach((p) => {
-      if (p.category) set.add(p.category);
-    });
+    site.products.forEach((p) => p.category && set.add(p.category));
     return Array.from(set);
   }, [site.products]);
 
-  // Filtered products
   const filteredProducts = useMemo(() => {
+    const q = searchQuery.toLowerCase();
     return site.products.filter((p) => {
       const matchCat = activeCategory === 'all' || p.category === activeCategory;
-      const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          p.description.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchSearch = p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q);
       return matchCat && matchSearch;
     });
   }, [site.products, activeCategory, searchQuery]);
 
-  // Total cart calculation
-  const cartTotal = useMemo(() => {
-    return cart.reduce((acc, item) => {
-      const price = item.product.isPromo && item.product.promoPrice ? item.product.promoPrice : item.product.price;
-      return acc + price * item.quantity;
-    }, 0);
-  }, [cart]);
+  const unitPrice = (p: ProductItem) => (p.isPromo && p.promoPrice ? p.promoPrice : p.price);
 
-  const totalCartCount = useMemo(() => {
-    return cart.reduce((acc, item) => acc + item.quantity, 0);
-  }, [cart]);
+  const cartTotal = useMemo(() => cart.reduce((acc, i) => acc + unitPrice(i.product) * i.quantity, 0), [cart]);
+  const totalCartCount = useMemo(() => cart.reduce((acc, i) => acc + i.quantity, 0), [cart]);
 
-  // Cart operations
   const addToCart = (product: ProductItem) => {
     if (!isInteractive) return;
     setCart((prev) => {
-      const existing = prev.find((item) => item.product.id === product.id);
+      const existing = prev.find((i) => i.product.id === product.id);
       if (existing) {
-        return prev.map((item) =>
-          item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-        );
+        return prev.map((i) => (i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i));
       }
       return [...prev, { product, quantity: 1 }];
     });
   };
 
   const updateQuantity = (productId: string, delta: number) => {
-    setCart((prev) => {
-      return prev
-        .map((item) => {
-          if (item.product.id === productId) {
-            const newQty = item.quantity + delta;
-            return newQty > 0 ? { ...item, quantity: newQty } : null;
-          }
-          return item;
+    setCart((prev) =>
+      prev
+        .map((i) => {
+          if (i.product.id !== productId) return i;
+          const q = i.quantity + delta;
+          return q > 0 ? { ...i, quantity: q } : null;
         })
-        .filter(Boolean) as CartItem[];
-    });
+        .filter(Boolean) as CartItem[]
+    );
   };
 
-  const removeFromCart = (productId: string) => {
-    setCart((prev) => prev.filter((item) => item.product.id !== productId));
-  };
-
-  // WhatsApp Checkout Handler
   const handleWhatsAppCheckout = () => {
     if (cart.length === 0) return;
 
-    confetti({
-      particleCount: 80,
-      spread: 70,
-      origin: { y: 0.6 },
+    let message = `*Pesanan baru — ${site.name}*\n\n`;
+    message += `Nama: ${buyerName.trim() || 'Pelanggan'}\n`;
+    if (buyerAddress.trim()) message += `Alamat: ${buyerAddress.trim()}\n`;
+    message += `\n*Pesanan:*\n`;
+    cart.forEach((item, idx) => {
+      const subtotal = unitPrice(item.product) * item.quantity;
+      message += `${idx + 1}. ${item.product.name} × ${item.quantity} = ${formatRp(subtotal)}\n`;
     });
+    message += `\n*Total: ${formatRp(cartTotal)}*\n\n`;
+    message += `Mohon konfirmasi ketersediaan dan cara pembayarannya. Terima kasih.`;
 
-    let message = `*PESANAN BARU DARI WEBSITE — ${site.name}*\n\n`;
-    message += `*Data Pelanggan:*\n`;
-    message += `• Nama: ${buyerName.trim() || 'Pelanggan'}\n`;
-    if (buyerAddress.trim()) {
-      message += `• Alamat: ${buyerAddress.trim()}\n`;
-    }
-    message += `\n*Daftar Pesanan:*\n`;
-
-    cart.forEach((item, index) => {
-      const price = item.product.isPromo && item.product.promoPrice ? item.product.promoPrice : item.product.price;
-      const subtotal = price * item.quantity;
-      message += `${index + 1}. ${item.product.name} (${item.quantity}x) = Rp ${subtotal.toLocaleString('id-ID')}\n`;
-    });
-
-    message += `\n*TOTAL PESANAN: Rp ${cartTotal.toLocaleString('id-ID')}*\n\n`;
-    message += `Mohon konfirmasi ketersediaan dan rincian pembayarannya ya. Terima kasih! 🙏`;
-
-    const cleanPhone = site.phone.replace(/[^0-9]/g, '');
-    const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
-    window.open(waUrl, '_blank');
+    window.open(`${waBase}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
-  // Border radius mapper
-  const getRadiusClass = (style: string) => {
-    switch (style) {
-      case 'sharp':
-        return 'rounded-xs';
-      case 'smooth':
-        return 'rounded-lg';
-      case 'rounded':
-        return 'rounded-2xl';
-      case 'pill':
-        return 'rounded-full';
-      default:
-        return 'rounded-xl';
-    }
-  };
+  const scrollToCatalog = () =>
+    document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
 
-  const brClass = getRadiusClass(site.style.borderRadius);
+  const heroImage =
+    site.products[0]?.image ||
+    'https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&w=1200&q=80';
+
+  const PrimaryCTA = ({ label, href }: { label: string; href: string }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-2 h-11 px-5 text-sm font-semibold transition-[filter,transform] hover:brightness-110 active:translate-y-px"
+      style={{ backgroundColor: s.primaryColor, color: onPrimary, borderRadius: radius.control }}
+    >
+      {label}
+      <ArrowUpRight className="w-4 h-4" strokeWidth={2} />
+    </a>
+  );
 
   return (
-    <div 
-      className="min-h-screen w-full transition-colors duration-300 relative selection:bg-amber-400 selection:text-black"
+    <div
+      className="@container min-h-full w-full transition-colors duration-300 relative flex flex-col"
       style={{
-        backgroundColor: site.style.backgroundColor,
-        color: site.style.textColor,
-        fontFamily: `var(--font-${site.style.fontFamily.toLowerCase().replace(/\s+/g, '-')}, '${site.style.fontFamily}', sans-serif)`,
+        backgroundColor: s.backgroundColor,
+        color: s.textColor,
+        fontFamily: `'${s.fontFamily}', ui-sans-serif, system-ui, sans-serif`,
       }}
     >
-      {/* TOP NOTIFICATION / PROMO BAR */}
-      <div 
-        className="w-full py-2 px-4 text-xs font-medium text-center flex items-center justify-center gap-2 text-black"
-        style={{ backgroundColor: site.style.accentColor }}
+      {/* ------------------------------ INFO BAR ------------------------------ */}
+      <div
+        className="w-full px-5 py-2 text-[11.5px] flex items-center justify-center gap-2 text-center"
+        style={{ backgroundColor: alpha(s.textColor, '0a'), color: muted, borderBottom: `1px solid ${line}` }}
       >
-        <Sparkles className="w-3.5 h-3.5" />
-        <span>Buka Setiap Hari • Layanan Cepat & Pesan Langsung via WhatsApp</span>
+        <span>{site.openingHours}</span>
+        <span aria-hidden style={{ color: subtle }}>/</span>
+        <span>Pesan langsung lewat WhatsApp</span>
       </div>
 
-      {/* HEADER / NAVIGATION */}
-      <header 
-        className="sticky top-0 z-30 backdrop-blur-md border-b px-4 sm:px-8 py-3.5 flex items-center justify-between transition-colors"
-        style={{ 
-          backgroundColor: `${site.style.backgroundColor}cc`,
-          borderColor: 'rgba(255, 255, 255, 0.08)' 
-        }}
+      {/* ------------------------------ HEADER ------------------------------ */}
+      <header
+        className="sticky top-0 z-30 backdrop-blur-md px-5 @3xl:px-10 h-16 flex items-center justify-between gap-4"
+        style={{ backgroundColor: alpha(s.backgroundColor, 'e6'), borderBottom: `1px solid ${line}` }}
       >
-        <div className="flex items-center gap-3">
-          <div 
-            className="w-9 h-9 flex items-center justify-center font-bold text-base text-black shadow-md"
-            style={{ 
-              backgroundColor: site.style.primaryColor,
-              borderRadius: site.style.borderRadius === 'pill' ? '9999px' : '8px'
-            }}
+        <div className="flex items-center gap-3 min-w-0">
+          <span
+            className="w-9 h-9 shrink-0 flex items-center justify-center font-bold text-[15px]"
+            style={{ backgroundColor: s.primaryColor, color: onPrimary, borderRadius: radius.control === '999px' ? '999px' : '8px' }}
           >
             {site.name.charAt(0)}
-          </div>
-          <div>
-            <h1 className="font-bold text-sm sm:text-base leading-tight tracking-tight">
-              {site.name}
-            </h1>
-            <p className="text-[11px] opacity-70 truncate max-w-[200px] sm:max-w-xs">
-              {site.tagline}
-            </p>
+          </span>
+          <div className="min-w-0">
+            <p className="font-semibold text-[15px] leading-tight tracking-tight truncate">{site.name}</p>
+            {city && (
+              <p className="text-[11.5px] truncate" style={{ color: subtle }}>
+                {CATEGORY_LABEL[site.category]} · {city}
+              </p>
+            )}
           </div>
         </div>
 
-        {/* CART TRIGGER BUTTON */}
-        <button
-          onClick={() => setIsCartOpen(true)}
-          className={`relative flex items-center gap-2 px-3 sm:px-4 py-2 font-semibold text-xs sm:text-sm text-black shadow-lg transition-transform active:scale-95 ${brClass}`}
-          style={{ backgroundColor: site.style.primaryColor }}
-        >
-          <ShoppingBag className="w-4 h-4" />
-          <span className="hidden sm:inline">Keranjang</span>
-          {totalCartCount > 0 && (
-            <span className="bg-black text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">
-              {totalCartCount}
-            </span>
-          )}
-        </button>
+        <div className="flex items-center gap-5 shrink-0">
+          <button onClick={scrollToCatalog} className="hidden @2xl:inline text-sm hover:opacity-100 transition-opacity" style={{ color: muted }}>
+            Katalog
+          </button>
+          <button
+            onClick={() => setIsCartOpen(true)}
+            aria-label={`Buka keranjang, ${totalCartCount} item`}
+            className="relative flex items-center gap-2 h-9 pl-3 pr-3.5 text-sm font-medium transition-colors"
+            style={{ border: `1px solid ${line}`, borderRadius: radius.control }}
+          >
+            <ShoppingBag className="w-4 h-4" strokeWidth={1.75} />
+            <span className="hidden @md:inline">Keranjang</span>
+            {totalCartCount > 0 && (
+              <span
+                className="min-w-5 h-5 px-1.5 rounded-full text-[11px] font-semibold flex items-center justify-center tabular-nums"
+                style={{ backgroundColor: s.primaryColor, color: onPrimary }}
+              >
+                {totalCartCount}
+              </span>
+            )}
+          </button>
+        </div>
       </header>
 
-      {/* HERO SECTION */}
-      {site.style.heroStyle === 'split' ? (
-        <section className="px-4 sm:px-8 py-10 sm:py-16 max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-          <div className="space-y-4 text-left">
-            <span 
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
-              style={{ 
-                backgroundColor: `${site.style.primaryColor}22`,
-                color: site.style.accentColor,
-                border: `1px solid ${site.style.primaryColor}44`
-              }}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" /> Resmi & Terpercaya
-            </span>
-            <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight leading-tight">
+      {/* ------------------------------ HERO ------------------------------ */}
+      {s.heroStyle === 'split' && (
+        <section className="px-5 @3xl:px-10 pt-10 pb-14 @3xl:pt-16 @3xl:pb-20 max-w-6xl mx-auto grid grid-cols-1 @3xl:grid-cols-[1.1fr_0.9fr] gap-10 @3xl:gap-14 items-center">
+          <div>
+            <p className="text-xs font-medium mb-5" style={{ color: s.primaryColor }}>
+              {CATEGORY_LABEL[site.category]}
+              {city ? ` di ${city}` : ''}
+            </p>
+            <h1 className="text-[34px] @lg:text-5xl @5xl:text-[56px] font-bold tracking-[-0.025em] leading-[1.05] text-balance">
               {site.tagline}
-            </h2>
-            <p className="text-sm sm:text-base opacity-80 leading-relaxed max-w-xl">
+            </h1>
+            <p className="mt-5 text-[15px] leading-relaxed max-w-[52ch] text-pretty" style={{ color: muted }}>
               {site.description}
             </p>
-            <div className="pt-2 flex flex-wrap gap-3">
-              <a
-                href={`https://wa.me/${site.phone.replace(/[^0-9]/g, '')}?text=Halo%20${encodeURIComponent(site.name)},%20saya%20mau%20tanya-tanya`}
-                target="_blank"
-                rel="noreferrer"
-                className={`inline-flex items-center gap-2 px-6 py-3 font-bold text-sm text-black shadow-lg transition-all hover:opacity-90 ${brClass}`}
-                style={{ backgroundColor: site.style.primaryColor }}
-              >
-                <MessageCircle className="w-4 h-4" /> Hubungi Kami di WA
-              </a>
-              <button
-                onClick={() => {
-                  const el = document.getElementById('catalog-section');
-                  el?.scrollIntoView({ behavior: 'smooth' });
-                }}
-                className={`inline-flex items-center gap-2 px-5 py-3 font-semibold text-sm border border-white/20 transition-all hover:bg-white/5 ${brClass}`}
-              >
-                Lihat Katalog
+            <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+              <PrimaryCTA label="Pesan via WhatsApp" href={`${waBase}?text=${encodeURIComponent(`Halo ${site.name}, saya mau tanya.`)}`} />
+              <button onClick={scrollToCatalog} className="group inline-flex items-center gap-1.5 text-sm font-medium">
+                Lihat katalog
+                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" strokeWidth={1.75} />
               </button>
             </div>
           </div>
-          <div className="relative">
-            <div 
-              className="absolute -inset-1 blur-2xl opacity-30 rounded-3xl"
-              style={{ backgroundColor: site.style.primaryColor }}
-            />
-            <div className={`relative overflow-hidden border border-white/10 shadow-2xl ${brClass}`}>
-              <img 
-                src={site.products[0]?.image || "https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&w=800&q=80"} 
-                alt={site.name}
-                className="w-full h-64 sm:h-80 object-cover hover:scale-105 transition-transform duration-500"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-5">
-                <div className="text-white">
-                  <p className="text-xs uppercase tracking-wider text-amber-300 font-bold">Produk Unggulan</p>
-                  <p className="font-bold text-lg">{site.products[0]?.name || site.name}</p>
-                </div>
-              </div>
+
+          <figure>
+            <div className="overflow-hidden aspect-[4/5] @3xl:aspect-[4/5]" style={{ borderRadius: radius.base, backgroundColor: s.cardBackgroundColor }}>
+              <img src={heroImage} alt={site.products[0]?.name || site.name} className="w-full h-full object-cover" />
             </div>
-          </div>
+            {site.products[0] && (
+              <figcaption className="mt-3 flex items-baseline justify-between gap-4 text-[13px]">
+                <span style={{ color: muted }}>{site.products[0].name}</span>
+                <span className="font-semibold tabular-nums">{formatRp(unitPrice(site.products[0]))}</span>
+              </figcaption>
+            )}
+          </figure>
         </section>
-      ) : site.style.heroStyle === 'banner' ? (
-        <section className="relative px-4 sm:px-8 py-16 sm:py-24 text-center overflow-hidden border-b border-white/10">
-          <div 
-            className="absolute inset-0 opacity-20 pointer-events-none bg-cover bg-center"
-            style={{ backgroundImage: `url(${site.products[0]?.image})` }}
+      )}
+
+      {s.heroStyle === 'banner' && (
+        <section className="relative overflow-hidden" style={{ borderBottom: `1px solid ${line}` }}>
+          <img src={heroImage} alt="" className="absolute inset-0 w-full h-full object-cover" />
+          <div
+            className="absolute inset-0"
+            style={{
+              background: `linear-gradient(to top, ${s.backgroundColor} 8%, ${alpha(s.backgroundColor, 'b3')} 55%, ${alpha(s.backgroundColor, '59')})`,
+            }}
           />
-          <div className="relative max-w-3xl mx-auto space-y-4">
-            <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight">
+          <div className="relative max-w-6xl mx-auto px-5 @3xl:px-10 pt-36 pb-12 @3xl:pt-56 @3xl:pb-16">
+            <p className="text-xs font-medium mb-4" style={{ color: s.primaryColor }}>
+              {CATEGORY_LABEL[site.category]}
+              {city ? ` di ${city}` : ''}
+            </p>
+            <h1 className="text-[38px] @lg:text-6xl font-bold tracking-[-0.03em] leading-[1.02] max-w-[16ch] text-balance">
               {site.name}
-            </h2>
-            <p className="text-base sm:text-xl opacity-85 leading-relaxed">
+            </h1>
+            <p className="mt-4 text-base @lg:text-lg max-w-[46ch] text-pretty" style={{ color: muted }}>
               {site.tagline}
             </p>
-            <p className="text-xs sm:text-sm opacity-70 max-w-xl mx-auto">
-              {site.description}
-            </p>
-            <div className="pt-4 flex justify-center gap-3">
-              <a
-                href={`https://wa.me/${site.phone.replace(/[^0-9]/g, '')}`}
-                target="_blank"
-                rel="noreferrer"
-                className={`inline-flex items-center gap-2 px-6 py-3 font-bold text-sm text-black shadow-lg ${brClass}`}
-                style={{ backgroundColor: site.style.primaryColor }}
-              >
-                <MessageCircle className="w-4 h-4" /> Pesan Sekarang
-              </a>
+            <div className="mt-8">
+              <PrimaryCTA label="Pesan sekarang" href={waBase} />
             </div>
           </div>
         </section>
-      ) : (
-        <section className="px-4 sm:px-8 py-8 sm:py-12 border-b border-white/10 max-w-5xl mx-auto">
-          <h2 className="text-2xl sm:text-4xl font-extrabold tracking-tight">
+      )}
+
+      {s.heroStyle === 'minimal' && (
+        <section className="px-5 @3xl:px-10 pt-12 pb-10 max-w-6xl mx-auto" style={{ borderBottom: `1px solid ${line}` }}>
+          <h1 className="text-[34px] @lg:text-5xl font-bold tracking-[-0.025em] leading-[1.05] text-balance max-w-[20ch]">
             {site.name}
-          </h2>
-          <p className="text-sm sm:text-base opacity-75 mt-1">
-            {site.tagline} • {site.address}
+          </h1>
+          <p className="mt-3 text-[15px] max-w-[56ch] text-pretty" style={{ color: muted }}>
+            {site.tagline}
           </p>
+          <dl className="mt-8 grid grid-cols-1 @lg:grid-cols-3 gap-4 text-[13px]">
+            <div>
+              <dt style={{ color: subtle }}>Alamat</dt>
+              <dd className="mt-0.5">{site.address}</dd>
+            </div>
+            <div>
+              <dt style={{ color: subtle }}>Jam buka</dt>
+              <dd className="mt-0.5">{site.openingHours}</dd>
+            </div>
+            <div>
+              <dt style={{ color: subtle }}>Pesan</dt>
+              <dd className="mt-0.5">
+                <a href={waBase} target="_blank" rel="noreferrer" className="underline underline-offset-4" style={{ textDecorationColor: s.primaryColor }}>
+                  WhatsApp
+                </a>
+              </dd>
+            </div>
+          </dl>
         </section>
       )}
 
-      {/* FEATURE PILLS / ADVANTAGES */}
+      {/* ------------------------------ FEATURES ------------------------------ */}
       {site.features && site.features.length > 0 && (
-        <section className="px-4 sm:px-8 py-6 max-w-6xl mx-auto">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <section className="px-5 @3xl:px-10 max-w-6xl mx-auto">
+          <ul className="grid grid-cols-2 @3xl:grid-cols-4 gap-x-6 py-2" style={{ borderTop: `1px solid ${line}`, borderBottom: `1px solid ${line}` }}>
             {site.features.map((feat, idx) => (
-              <div 
-                key={idx}
-                className={`p-3 text-xs sm:text-sm font-medium border border-white/10 flex items-center gap-2 shadow-sm ${brClass}`}
-                style={{ backgroundColor: site.style.cardBackgroundColor }}
-              >
-                <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: site.style.primaryColor }} />
-                <span className="truncate">{feat}</span>
-              </div>
+              <li key={idx} className="py-4 text-[13px] leading-snug">
+                <span className="block text-[11px] font-medium tabular-nums mb-1.5" style={{ color: s.primaryColor }}>
+                  {String(idx + 1).padStart(2, '0')}
+                </span>
+                {feat}
+              </li>
             ))}
-          </div>
+          </ul>
         </section>
       )}
 
-      {/* CATALOG SECTION */}
-      <section id="catalog-section" className="px-4 sm:px-8 py-8 max-w-6xl mx-auto space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* ------------------------------ CATALOG ------------------------------ */}
+      <section id="catalog-section" className="px-5 @3xl:px-10 pt-14 pb-10 max-w-6xl mx-auto">
+        <div className="flex flex-col @2xl:flex-row @2xl:items-end justify-between gap-5">
           <div>
-            <h3 className="text-xl sm:text-2xl font-bold tracking-tight">
-              Katalog Pilihan
-            </h3>
-            <p className="text-xs sm:text-sm opacity-70">
-              Pilih produk favorit Anda dan selesaikan pesanan via WhatsApp instan
+            <h2 className="text-2xl @lg:text-3xl font-bold tracking-[-0.02em]">Katalog</h2>
+            <p className="text-[13px] mt-1.5" style={{ color: subtle }}>
+              {site.products.length} produk. Pilih, lalu kirim pesanan lewat WhatsApp.
             </p>
           </div>
-
-          {/* SEARCH BAR */}
-          <div className="relative w-full sm:w-64">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 opacity-50" />
+          <div className="relative w-full @2xl:w-64">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: subtle }} strokeWidth={1.75} />
             <input
-              type="text"
+              type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari menu / produk..."
-              className={`w-full pl-9 pr-3 py-2 text-xs sm:text-sm bg-white/5 border border-white/10 focus:outline-none focus:border-white/30 text-white ${brClass}`}
+              placeholder="Cari produk"
+              aria-label="Cari produk"
+              className="w-full h-10 pl-9 pr-3 text-sm bg-transparent focus:outline-none"
+              style={{ border: `1px solid ${line}`, borderRadius: radius.control, color: s.textColor }}
             />
           </div>
         </div>
 
-        {/* CATEGORY FILTER PILLS */}
-        {productCategories.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-            <button
-              onClick={() => setActiveCategory('all')}
-              className={`px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-all ${brClass} ${
-                activeCategory === 'all'
-                  ? 'text-black shadow-md'
-                  : 'bg-white/5 border border-white/10 opacity-75 hover:opacity-100'
-              }`}
-              style={activeCategory === 'all' ? { backgroundColor: site.style.primaryColor } : {}}
-            >
-              Semua ({site.products.length})
-            </button>
-            {productCategories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={`px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-all ${brClass} ${
-                  activeCategory === cat
-                    ? 'text-black shadow-md'
-                    : 'bg-white/5 border border-white/10 opacity-75 hover:opacity-100'
-                }`}
-                style={activeCategory === cat ? { backgroundColor: site.style.primaryColor } : {}}
-              >
-                {cat}
-              </button>
-            ))}
+        {productCategories.length > 1 && (
+          <div className="mt-6 flex items-center gap-6 overflow-x-auto scrollbar-none" style={{ borderBottom: `1px solid ${line}` }}>
+            {['all', ...productCategories].map((cat) => {
+              const active = activeCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setActiveCategory(cat)}
+                  className="relative pb-3 text-sm whitespace-nowrap transition-colors"
+                  style={{ color: active ? s.textColor : subtle, fontWeight: active ? 600 : 400 }}
+                >
+                  {cat === 'all' ? 'Semua' : cat}
+                  {active && <span className="absolute left-0 right-0 -bottom-px h-0.5" style={{ backgroundColor: s.primaryColor }} />}
+                </button>
+              );
+            })}
           </div>
         )}
 
-        {/* PRODUCT GRID */}
         {filteredProducts.length === 0 ? (
-          <div className={`p-10 text-center border border-dashed border-white/10 ${brClass}`}>
-            <p className="text-sm opacity-60">Tidak ada produk yang cocok dengan pencarian.</p>
+          <div className="py-16 text-center">
+            <p className="text-sm">Tidak ada produk untuk &ldquo;{searchQuery}&rdquo;.</p>
+            <button onClick={() => { setSearchQuery(''); setActiveCategory('all'); }} className="mt-2 text-[13px] underline underline-offset-4" style={{ color: muted }}>
+              Tampilkan semua
+            </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+          <div className="mt-8 grid grid-cols-1 @md:grid-cols-2 @4xl:grid-cols-3 @6xl:grid-cols-4 gap-x-5 gap-y-9">
             {filteredProducts.map((product) => {
-              const inCartItem = cart.find((c) => c.product.id === product.id);
+              const inCart = cart.find((c) => c.product.id === product.id);
               return (
-                <div
-                  key={product.id}
-                  className={`flex flex-col border border-white/10 overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 group ${brClass}`}
-                  style={{ backgroundColor: site.style.cardBackgroundColor }}
-                >
-                  {/* PRODUCT IMAGE */}
-                  <div className="relative w-full h-44 sm:h-48 overflow-hidden bg-black/40">
+                <article key={product.id} className="group flex flex-col">
+                  <div className="relative aspect-[4/3] overflow-hidden" style={{ borderRadius: radius.base, backgroundColor: s.cardBackgroundColor }}>
                     <img
                       src={product.image}
                       alt={product.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       loading="lazy"
+                      className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03]"
                     />
                     {product.badge && (
-                      <span 
-                        className="absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-full text-black shadow-md"
-                        style={{ backgroundColor: site.style.accentColor }}
+                      <span
+                        className="absolute top-3 left-3 text-[11px] font-semibold px-2 py-1"
+                        style={{ backgroundColor: s.accentColor, color: onAccent, borderRadius: radius.control === '999px' ? '999px' : '3px' }}
                       >
                         {product.badge}
                       </span>
                     )}
                   </div>
 
-                  {/* PRODUCT INFO */}
-                  <div className="p-4 flex flex-col flex-1">
-                    <h4 className="font-semibold text-sm sm:text-base leading-snug line-clamp-1">
-                      {product.name}
-                    </h4>
-                    <p className="text-xs opacity-70 mt-1 line-clamp-2 flex-1">
+                  <div className="pt-4 flex flex-col flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="font-semibold text-[15px] leading-snug">{product.name}</h3>
+                      <div className="text-right shrink-0 tabular-nums">
+                        <p className="font-semibold text-[15px]" style={{ color: product.isPromo ? s.primaryColor : undefined }}>
+                          {formatRp(unitPrice(product))}
+                        </p>
+                        {product.isPromo && product.promoPrice && (
+                          <p className="text-[11.5px] line-through" style={{ color: subtle }}>
+                            {formatRp(product.price)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-[13px] mt-1.5 leading-relaxed line-clamp-2 flex-1" style={{ color: muted }}>
                       {product.description}
                     </p>
 
-                    <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
-                      <div>
-                        {product.isPromo && product.promoPrice ? (
-                          <div className="flex flex-col">
-                            <span className="text-[11px] line-through opacity-40">
-                              Rp {product.price.toLocaleString('id-ID')}
-                            </span>
-                            <span 
-                              className="text-sm sm:text-base font-bold"
-                              style={{ color: site.style.primaryColor }}
-                            >
-                              Rp {product.promoPrice.toLocaleString('id-ID')}
-                            </span>
-                          </div>
-                        ) : (
-                          <span 
-                            className="text-sm sm:text-base font-bold"
-                            style={{ color: site.style.primaryColor }}
-                          >
-                            Rp {product.price.toLocaleString('id-ID')}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* ADD TO CART ACTION */}
-                      {inCartItem ? (
-                        <div className={`flex items-center gap-1.5 bg-white/10 px-2 py-1 ${brClass}`}>
-                          <button
-                            onClick={() => updateQuantity(product.id, -1)}
-                            className="p-1 hover:bg-white/20 rounded transition-colors"
-                          >
-                            <Minus className="w-3 h-3" />
+                    <div className="mt-4">
+                      {inCart ? (
+                        <div
+                          className="flex items-center justify-between h-10 px-1"
+                          style={{ border: `1px solid ${line}`, borderRadius: radius.control }}
+                        >
+                          <button onClick={() => updateQuantity(product.id, -1)} aria-label={`Kurangi ${product.name}`} className="w-8 h-8 flex items-center justify-center rounded-md hover:opacity-70">
+                            <Minus className="w-3.5 h-3.5" />
                           </button>
-                          <span className="text-xs font-bold px-1">{inCartItem.quantity}</span>
-                          <button
-                            onClick={() => updateQuantity(product.id, 1)}
-                            className="p-1 hover:bg-white/20 rounded transition-colors"
-                          >
-                            <Plus className="w-3 h-3" />
+                          <span className="text-sm font-semibold tabular-nums">{inCart.quantity}</span>
+                          <button onClick={() => updateQuantity(product.id, 1)} aria-label={`Tambah ${product.name}`} className="w-8 h-8 flex items-center justify-center rounded-md hover:opacity-70">
+                            <Plus className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       ) : (
                         <button
                           onClick={() => addToCart(product)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-black shadow transition-transform active:scale-95 ${brClass}`}
-                          style={{ backgroundColor: site.style.primaryColor }}
+                          className="w-full h-10 flex items-center justify-center gap-1.5 text-sm font-medium transition-colors"
+                          style={{ border: `1px solid ${line}`, borderRadius: radius.control }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = s.primaryColor;
+                            e.currentTarget.style.color = onPrimary;
+                            e.currentTarget.style.borderColor = s.primaryColor;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = '';
+                            e.currentTarget.style.color = '';
+                            e.currentTarget.style.borderColor = line;
+                          }}
                         >
-                          <Plus className="w-3.5 h-3.5" /> Tambah
+                          <Plus className="w-3.5 h-3.5" strokeWidth={2} />
+                          Tambah ke keranjang
                         </button>
                       )}
                     </div>
                   </div>
-                </div>
+                </article>
               );
             })}
           </div>
         )}
       </section>
 
-      {/* TESTIMONIALS SECTION */}
+      {/* ------------------------------ TESTIMONIALS ------------------------------ */}
       {site.testimonials && site.testimonials.length > 0 && (
-        <section className="px-4 sm:px-8 py-10 max-w-6xl mx-auto border-t border-white/10">
-          <h3 className="text-lg sm:text-xl font-bold tracking-tight mb-4">
-            Apa Kata Pelanggan Kami?
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {site.testimonials.map((t) => (
-              <div
-                key={t.id}
-                className={`p-5 border border-white/10 space-y-2 shadow-sm ${brClass}`}
-                style={{ backgroundColor: site.style.cardBackgroundColor }}
-              >
-                <div className="flex items-center gap-1 text-amber-400">
-                  {Array.from({ length: t.rating }).map((_, i) => (
-                    <Star key={i} className="w-3.5 h-3.5 fill-current" />
-                  ))}
-                </div>
-                <p className="text-xs sm:text-sm italic opacity-85 leading-relaxed">
-                  "{t.comment}"
-                </p>
-                <div className="pt-2 text-xs font-semibold opacity-70">
-                  <span>{t.name}</span> • <span>{t.role}</span>
-                </div>
-              </div>
+        <section className="px-5 @3xl:px-10 py-14 max-w-6xl mx-auto" style={{ borderTop: `1px solid ${line}` }}>
+          <h2 className="text-sm font-medium mb-8" style={{ color: subtle }}>Kata pelanggan</h2>
+          <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-10">
+            {site.testimonials.map((t, i) => (
+              <figure key={t.id} className={i === 0 ? '@3xl:col-span-2' : ''}>
+                <blockquote
+                  className={`${i === 0 ? 'text-2xl @lg:text-[30px] leading-[1.3] max-w-[34ch]' : 'text-[17px] leading-relaxed'} font-medium tracking-[-0.01em] text-pretty`}
+                >
+                  &ldquo;{t.comment}&rdquo;
+                </blockquote>
+                <figcaption className="mt-4 text-[13px]">
+                  <span className="font-semibold">{t.name}</span>
+                  <span style={{ color: subtle }}> — {t.role}</span>
+                </figcaption>
+              </figure>
             ))}
           </div>
         </section>
       )}
 
-      {/* STORE INFO & FOOTER */}
-      <footer className="mt-12 border-t border-white/10 px-4 sm:px-8 py-10 opacity-90">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-6 text-xs sm:text-sm">
+      {/* ------------------------------ FOOTER ------------------------------ */}
+      <footer className="px-5 @3xl:px-10 pt-12 pb-8 mt-auto" style={{ borderTop: `1px solid ${line}`, backgroundColor: alpha(s.textColor, '05') }}>
+        <div className="max-w-6xl mx-auto grid grid-cols-1 @3xl:grid-cols-[1.4fr_1fr_1fr] gap-8 text-[13px]">
           <div>
-            <h4 className="font-bold text-base mb-2">{site.name}</h4>
-            <p className="opacity-70 leading-relaxed">{site.description}</p>
+            <p className="font-semibold text-base">{site.name}</p>
+            <p className="mt-2 leading-relaxed max-w-[42ch]" style={{ color: muted }}>{site.description}</p>
           </div>
-          <div>
-            <h5 className="font-semibold mb-2">Kontak & Lokasi</h5>
-            <p className="flex items-center gap-2 opacity-70 mb-1">
-              <MapPin className="w-3.5 h-3.5 shrink-0" /> {site.address}
-            </p>
-            <p className="flex items-center gap-2 opacity-70 mb-1">
-              <Clock className="w-3.5 h-3.5 shrink-0" /> {site.openingHours}
-            </p>
+          <div className="space-y-3">
+            <div>
+              <p style={{ color: subtle }}>Alamat</p>
+              <p className="mt-0.5">{site.address}</p>
+            </div>
+            <div>
+              <p style={{ color: subtle }}>Jam buka</p>
+              <p className="mt-0.5">{site.openingHours}</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <p style={{ color: subtle }}>Pesanan khusus atau jumlah besar</p>
+              <a href={waBase} target="_blank" rel="noreferrer" className="mt-0.5 inline-flex items-center gap-1 font-medium underline underline-offset-4" style={{ textDecorationColor: s.primaryColor }}>
+                Chat WhatsApp
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </a>
+            </div>
             {site.instagram && (
-              <p className="opacity-70">Instagram: {site.instagram}</p>
+              <div>
+                <p style={{ color: subtle }}>Instagram</p>
+                <p className="mt-0.5">{site.instagram}</p>
+              </div>
             )}
           </div>
-          <div>
-            <h5 className="font-semibold mb-2">Pesan Cepat</h5>
-            <p className="opacity-70 mb-3">
-              Ada pesanan kustom atau kebutuhan dalam jumlah banyak? Hubungi admin via WhatsApp sekarang.
-            </p>
-            <a
-              href={`https://wa.me/${site.phone.replace(/[^0-9]/g, '')}`}
-              target="_blank"
-              rel="noreferrer"
-              className={`inline-flex items-center gap-2 px-4 py-2 font-bold text-xs text-black shadow ${brClass}`}
-              style={{ backgroundColor: site.style.primaryColor }}
-            >
-              <MessageCircle className="w-4 h-4" /> Chat WhatsApp
-            </a>
-          </div>
         </div>
-
-        <div className="max-w-6xl mx-auto mt-8 pt-4 border-t border-white/10 text-center text-[11px] opacity-50">
-          © {new Date().getFullYear()} {site.name}. Dibuat secara instan dengan KilasWeb AI Builder.
+        <div className="max-w-6xl mx-auto mt-10 pt-5 text-[11.5px] flex justify-between gap-4" style={{ borderTop: `1px solid ${line}`, color: subtle }}>
+          <span>© {new Date().getFullYear()} {site.name}</span>
+          <span>Dibuat dengan KilasWeb</span>
         </div>
       </footer>
 
-      {/* CART SLIDE-OVER DRAWER MODAL */}
+      {/* ------------------------------ CART DRAWER ------------------------------ */}
       <AnimatePresence>
         {isCartOpen && (
-          <div className="fixed inset-0 z-50 flex justify-end">
-            {/* Backdrop */}
+          <div className="absolute inset-0 z-50 flex justify-end overflow-hidden">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsCartOpen(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              className="absolute inset-0 bg-black/55"
             />
-
-            {/* Drawer */}
-            <motion.div
+            <motion.aside
+              role="dialog"
+              aria-modal="true"
+              aria-label="Keranjang"
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="relative w-full max-w-md h-full bg-[#12161f] border-l border-white/10 p-5 flex flex-col z-10 text-white shadow-2xl"
+              transition={{ type: 'spring', damping: 32, stiffness: 320 }}
+              className="relative w-full max-w-md h-full flex flex-col"
+              style={{ backgroundColor: s.backgroundColor, color: s.textColor, borderLeft: `1px solid ${line}` }}
             >
-              <div className="flex items-center justify-between pb-4 border-b border-white/10">
-                <div className="flex items-center gap-2">
-                  <ShoppingBag className="w-5 h-5 text-amber-400" />
-                  <h3 className="font-bold text-base">Keranjang Pesanan</h3>
-                  <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full font-bold">
-                    {totalCartCount} item
-                  </span>
-                </div>
-                <button
-                  onClick={() => setIsCartOpen(false)}
-                  className="p-1.5 hover:bg-white/10 rounded-full transition-colors"
-                >
-                  <X className="w-5 h-5" />
+              <div className="flex items-center justify-between px-5 h-16 shrink-0" style={{ borderBottom: `1px solid ${line}` }}>
+                <h2 className="font-semibold text-base">
+                  Keranjang
+                  <span className="ml-2 text-sm font-normal tabular-nums" style={{ color: subtle }}>{totalCartCount}</span>
+                </h2>
+                <button onClick={() => setIsCartOpen(false)} aria-label="Tutup keranjang" className="p-2 -mr-2 rounded-md hover:opacity-70">
+                  <X className="w-5 h-5" strokeWidth={1.75} />
                 </button>
               </div>
 
-              {/* Cart List */}
-              <div className="flex-1 overflow-y-auto py-4 space-y-3">
+              <div className="flex-1 overflow-y-auto px-5">
                 {cart.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center p-6 opacity-60">
-                    <ShoppingBag className="w-12 h-12 mb-3 stroke-1" />
-                    <p className="font-medium text-sm">Keranjang Anda masih kosong</p>
-                    <p className="text-xs mt-1">Pilih produk dari katalog untuk memesan</p>
+                  <div className="h-full flex flex-col items-center justify-center text-center px-6">
+                    <p className="text-sm font-medium">Keranjang masih kosong</p>
+                    <p className="text-[13px] mt-1" style={{ color: subtle }}>Tambahkan produk dari katalog.</p>
+                    <button
+                      onClick={() => { setIsCartOpen(false); scrollToCatalog(); }}
+                      className="mt-5 text-sm font-medium underline underline-offset-4"
+                      style={{ textDecorationColor: s.primaryColor }}
+                    >
+                      Lihat katalog
+                    </button>
                   </div>
                 ) : (
-                  cart.map((item) => {
-                    const price = item.product.isPromo && item.product.promoPrice ? item.product.promoPrice : item.product.price;
-                    return (
-                      <div
-                        key={item.product.id}
-                        className="flex gap-3 p-3 bg-white/5 border border-white/5 rounded-xl items-center"
-                      >
-                        <img
-                          src={item.product.image}
-                          alt={item.product.name}
-                          className="w-14 h-14 object-cover rounded-lg shrink-0"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-semibold text-xs truncate">{item.product.name}</h4>
-                          <p className="text-xs text-amber-400 font-bold mt-0.5">
-                            Rp {price.toLocaleString('id-ID')}
-                          </p>
+                  <ul>
+                    {cart.map((item) => (
+                      <li key={item.product.id} className="flex gap-3 py-4" style={{ borderBottom: `1px solid ${line}` }}>
+                        <img src={item.product.image} alt={item.product.name} className="w-16 h-16 object-cover shrink-0" style={{ borderRadius: '6px' }} />
+                        <div className="flex-1 min-w-0 flex flex-col">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="font-medium text-sm leading-snug">{item.product.name}</p>
+                            <p className="text-sm font-semibold tabular-nums shrink-0">{formatRp(unitPrice(item.product) * item.quantity)}</p>
+                          </div>
+                          <div className="mt-auto flex items-center justify-between pt-2">
+                            <div className="flex items-center gap-1" style={{ border: `1px solid ${line}`, borderRadius: '6px' }}>
+                              <button onClick={() => updateQuantity(item.product.id, -1)} aria-label="Kurangi" className="w-7 h-7 flex items-center justify-center hover:opacity-70">
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <span className="text-xs font-semibold w-5 text-center tabular-nums">{item.quantity}</span>
+                              <button onClick={() => updateQuantity(item.product.id, 1)} aria-label="Tambah" className="w-7 h-7 flex items-center justify-center hover:opacity-70">
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+                            <button
+                              onClick={() => setCart((prev) => prev.filter((i) => i.product.id !== item.product.id))}
+                              className="text-xs underline underline-offset-4"
+                              style={{ color: subtle }}
+                            >
+                              Hapus
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5 bg-black/40 px-2 py-1 rounded-lg">
-                          <button
-                            onClick={() => updateQuantity(item.product.id, -1)}
-                            className="p-1 hover:bg-white/20 rounded"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <span className="text-xs font-bold px-1">{item.quantity}</span>
-                          <button
-                            onClick={() => updateQuantity(item.product.id, 1)}
-                            className="p-1 hover:bg-white/20 rounded"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </div>
-                        <button
-                          onClick={() => removeFromCart(item.product.id)}
-                          className="p-1.5 text-red-400 hover:text-red-300 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    );
-                  })
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
 
-              {/* Checkout Form & Total */}
               {cart.length > 0 && (
-                <div className="pt-4 border-t border-white/10 space-y-3">
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      placeholder="Nama Anda (opsional)"
-                      value={buyerName}
-                      onChange={(e) => setBuyerName(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-amber-400 text-white placeholder-white/40"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Alamat Pengiriman (opsional)"
-                      value={buyerAddress}
-                      onChange={(e) => setBuyerAddress(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-amber-400 text-white placeholder-white/40"
-                    />
+                <div className="px-5 pt-4 pb-5 space-y-3 shrink-0" style={{ borderTop: `1px solid ${line}` }}>
+                  <input
+                    type="text"
+                    placeholder="Nama (opsional)"
+                    aria-label="Nama pemesan"
+                    value={buyerName}
+                    onChange={(e) => setBuyerName(e.target.value)}
+                    className="w-full h-10 px-3 text-sm bg-transparent focus:outline-none"
+                    style={{ border: `1px solid ${line}`, borderRadius: radius.control === '999px' ? '10px' : radius.control }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Alamat pengiriman (opsional)"
+                    aria-label="Alamat pengiriman"
+                    value={buyerAddress}
+                    onChange={(e) => setBuyerAddress(e.target.value)}
+                    className="w-full h-10 px-3 text-sm bg-transparent focus:outline-none"
+                    style={{ border: `1px solid ${line}`, borderRadius: radius.control === '999px' ? '10px' : radius.control }}
+                  />
+                  <div className="flex items-baseline justify-between pt-2">
+                    <span className="text-sm" style={{ color: muted }}>Total</span>
+                    <span className="text-xl font-bold tabular-nums">{formatRp(cartTotal)}</span>
                   </div>
-
-                  <div className="flex items-center justify-between text-sm pt-1">
-                    <span className="opacity-70">Total Pembayaran:</span>
-                    <span className="font-black text-lg text-amber-400">
-                      Rp {cartTotal.toLocaleString('id-ID')}
-                    </span>
-                  </div>
-
-                  <motion.button
-                    whileTap={{ scale: 0.98 }}
+                  <button
                     onClick={handleWhatsAppCheckout}
-                    className="w-full py-3.5 bg-[#25D366] hover:bg-[#20ba59] text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/30 transition-all"
+                    className="w-full h-12 text-sm font-semibold flex items-center justify-center gap-2 transition-[filter,transform] hover:brightness-110 active:translate-y-px"
+                    style={{ backgroundColor: s.primaryColor, color: onPrimary, borderRadius: radius.control }}
                   >
-                    <MessageCircle className="w-5 h-5 fill-current" />
-                    <span>Kirim Pesanan ke WhatsApp</span>
-                  </motion.button>
-                  <p className="text-[10px] text-center opacity-50">
-                    Otomatis mengirimkan rincian pesanan ke WhatsApp pemilik toko
+                    Kirim pesanan via WhatsApp
+                    <ArrowUpRight className="w-4 h-4" strokeWidth={2} />
+                  </button>
+                  <p className="text-[11.5px] text-center" style={{ color: subtle }}>
+                    Rincian pesanan dikirim ke WhatsApp penjual untuk dikonfirmasi.
                   </p>
                 </div>
               )}
-            </motion.div>
+            </motion.aside>
           </div>
         )}
       </AnimatePresence>

@@ -39,31 +39,23 @@ export default function PublicStorefrontPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0d1117] flex items-center justify-center text-white">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs text-slate-400">Memuat website UMKM...</p>
-        </div>
+      <div className="min-h-dvh bg-ink-950 flex items-center justify-center">
+        <p className="text-xs text-fg-subtle">Memuat halaman…</p>
       </div>
     );
   }
 
   if (!site) {
     return (
-      <div className="min-h-screen bg-[#0d1117] flex items-center justify-center text-white p-6">
-        <div className="text-center max-w-sm space-y-4">
-          <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto text-2xl font-bold">
-            404
-          </div>
-          <h2 className="text-xl font-bold">Website Tidak Ditemukan</h2>
-          <p className="text-xs text-slate-400">
-            Website dengan alamat slug "{slug}" belum dibuat atau telah dipindahkan.
+      <div className="min-h-dvh bg-ink-950 flex items-center justify-center p-6">
+        <div className="max-w-sm">
+          <p className="font-mono text-xs text-fg-subtle">404</p>
+          <h1 className="font-display text-4xl mt-2">Halaman tidak ditemukan</h1>
+          <p className="text-[13px] text-fg-muted mt-3">
+            Belum ada website dengan alamat <span className="font-mono text-fg">/site/{slug}</span>, atau alamatnya sudah diganti.
           </p>
-          <button
-            onClick={() => router.push('/')}
-            className="px-5 py-2.5 bg-amber-400 text-black font-bold text-xs rounded-xl shadow-lg hover:bg-amber-300"
-          >
-            Buka Studio Pembuat Web
+          <button onClick={() => router.push('/')} className="btn btn-primary mt-6 h-9">
+            Kembali ke studio
           </button>
         </div>
       </div>
@@ -73,19 +65,14 @@ export default function PublicStorefrontPage() {
   return (
     <div className="relative min-h-screen">
       {/* Floating Admin & Share Bar at the top */}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-[#0d1117]/90 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full shadow-2xl flex items-center gap-3 text-xs text-white">
-        <button
-          onClick={() => router.push('/')}
-          className="flex items-center gap-1.5 px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full transition-colors font-medium"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" /> Studio Editor
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 p-1 rounded-lg bg-ink-900/95 backdrop-blur-md border border-line-strong shadow-[0_20px_40px_-15px_rgba(0,0,0,0.8)] text-fg">
+        <button onClick={() => router.push('/')} className="btn btn-quiet">
+          <ArrowLeft className="w-3.5 h-3.5" strokeWidth={1.75} /> Studio
         </button>
-        <button
-          onClick={handleCopyLink}
-          className="flex items-center gap-1.5 px-3 py-1 bg-amber-400 text-black font-bold rounded-full shadow hover:bg-amber-300 transition-colors"
-        >
-          {copied ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
-          <span>{copied ? 'Tersalin!' : 'Bagikan Link'}</span>
+        <span className="h-4 w-px bg-line" />
+        <button onClick={handleCopyLink} className="btn btn-quiet">
+          {copied ? <Check className="w-3.5 h-3.5 text-accent" strokeWidth={2} /> : <Share2 className="w-3.5 h-3.5" strokeWidth={1.75} />}
+          <span>{copied ? 'Tautan disalin' : 'Salin tautan'}</span>
         </button>
       </div>
 

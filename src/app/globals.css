@@ -1,52 +1,172 @@
 @import "tailwindcss";
 
-@layer base {
-  :root {
-    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  }
+@theme {
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', monospace;
+  --font-display: 'Instrument Serif', Georgia, serif;
 
+  /* Warm neutral ink scale — one gray family only */
+  --color-ink-950: #0b0b0a;
+  --color-ink-900: #111110;
+  --color-ink-850: #161615;
+  --color-ink-800: #1c1c1a;
+  --color-ink-700: #272724;
+
+  --color-line: rgb(236 235 230 / 0.07);
+  --color-line-strong: rgb(236 235 230 / 0.14);
+
+  --color-fg: #ecebe6;
+  --color-fg-muted: #a09e96;
+  --color-fg-subtle: #6e6c66;
+
+  /* Single accent */
+  --color-accent: #d4a05a;
+  --color-accent-ink: #1a1408;
+  --color-accent-soft: rgb(212 160 90 / 0.12);
+
+  --color-danger: #e0786a;
+}
+
+@layer base {
   * {
     box-sizing: border-box;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     font-family: var(--font-sans);
+    font-feature-settings: 'ss01', 'cv11';
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Custom subtle scrollbar */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.25);
+    background: rgb(236 235 230 / 0.1);
     border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(148, 163, 184, 0.45);
+    background: rgb(236 235 230 / 0.2);
+    background-clip: padding-box;
   }
 }
 
-/* Glassmorphism utilities */
-.glass-panel {
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+@layer components {
+  .field {
+    width: 100%;
+    height: 36px;
+    padding: 0 0.75rem;
+    font-size: 13px;
+    color: var(--color-fg);
+    background: var(--color-ink-850);
+    border: 1px solid var(--color-line);
+    border-radius: 7px;
+    transition: border-color 150ms, background-color 150ms;
+  }
+  textarea.field {
+    height: auto;
+    padding: 0.6rem 0.75rem;
+    line-height: 1.55;
+    resize: vertical;
+  }
+  .field::placeholder {
+    color: var(--color-fg-subtle);
+  }
+  .field:hover {
+    border-color: var(--color-line-strong);
+  }
+  .field:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    background: var(--color-ink-800);
+  }
+
+  .field-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-fg-muted);
+  }
+
+  .field-hint {
+    margin-top: 6px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--color-fg-subtle);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    height: 32px;
+    padding: 0 0.8rem;
+    font-size: 12.5px;
+    font-weight: 500;
+    border-radius: 7px;
+    white-space: nowrap;
+    transition: background-color 150ms, border-color 150ms, color 150ms, transform 100ms;
+  }
+  .btn:active {
+    transform: translateY(1px);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+  .btn-primary {
+    background: var(--color-accent);
+    color: var(--color-accent-ink);
+  }
+  .btn-primary:hover {
+    background: #e0b06d;
+  }
+  .btn-ghost {
+    color: var(--color-fg-muted);
+    border: 1px solid var(--color-line);
+  }
+  .btn-ghost:hover {
+    color: var(--color-fg);
+    border-color: var(--color-line-strong);
+    background: var(--color-ink-800);
+  }
+  .btn-quiet {
+    color: var(--color-fg-muted);
+  }
+  .btn-quiet:hover {
+    color: var(--color-fg);
+    background: var(--color-ink-800);
+  }
 }
 
-.glass-card {
-  background: rgba(30, 41, 59, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
-.glow-subtle {
-  box-shadow: 0 0 30px -8px rgba(14, 165, 233, 0.25);
+.text-balance {
+  text-wrap: balance;
+}
+.text-pretty {
+  text-wrap: pretty;
 }
